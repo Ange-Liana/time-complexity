@@ -3,13 +3,24 @@ from flask import Flask, request, jsonify
 import time
 import base64
 import os
+import json
 
 import matplotlib
 matplotlib.use("Agg")
 
+from database import db, Analysis
+
 
 app = Flask(__name__)
 
+# Database configuration
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///analysis.db"
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+db.init_app(app)
+
+with app.app_context():
+    db.create_all()
 
 
 # Algorithms
@@ -68,6 +79,7 @@ def insertion_sort(n):
 
         numbers[j + 1] = key
 
+
 def selection_sort(n):
     numbers = list(range(n, 0, -1))
 
@@ -81,7 +93,8 @@ def selection_sort(n):
         numbers[i], numbers[min_index] = (
             numbers[min_index],
             numbers[i]
-        )    
+        )
+
 
 # Algorithm dictionary
 
@@ -161,13 +174,12 @@ def time_complexity_visualizer(algorithm, n_min, n_max, n_step):
 def analyze():
 
     # Get query parameters
+
     algo = request.args.get("algo")
     step = request.args.get("step")
     n_max = request.args.get("n_max")
 
-   
     # Check parameters
-   
 
     if algo is None or step is None or n_max is None:
 
@@ -180,9 +192,7 @@ def analyze():
 
     algo = algo.strip("'\"")
 
-   
     # Convert numbers
-   
 
     try:
 
@@ -195,18 +205,15 @@ def analyze():
             "error": "step and n_max must be integers"
         }), 400
 
-   
     # Validate step
-    
 
     if step <= 0:
 
         return jsonify({
             "error": "step must be greater than 0"
         }), 400
-      
+
     # Validate n_max
-   
 
     if n_max < 0:
 
@@ -214,9 +221,7 @@ def analyze():
             "error": "n_max must be greater than or equal to 0"
         }), 400
 
-   
     # Validate algorithm
-   
 
     if algo not in algorithms:
 
@@ -228,11 +233,10 @@ def analyze():
         }), 400
 
     # Minimum input size
+
     n_min = 0
 
-   
     # Run algorithm visualizer
-   
 
     result = time_complexity_visualizer(
         algorithms[algo],
@@ -241,9 +245,8 @@ def analyze():
         step
     )
 
-   
     # Return JSON response
-   
+
     return jsonify({
 
         "algorithm": algo,
@@ -264,6 +267,55 @@ def analyze():
 
     })
 
+
+# Save analysis endpoint
+
+@app.route("/save_analysis", methods=["POST"])
+def save_analysis():
+
+    data = request.get_json()
+
+    if data is None:
+
+        return jsonify({
+            "error": "Please provide JSON data"
+        }), 400
+
+    required_fields = [
+        "algorithm",
+        "n_min",
+        "n_max",
+        "step",
+        "input_sizes",
+        "times",
+        "image_path"
+    ]
+
+    for field in required_fields:
+
+        if field not in data:
+
+            return jsonify({
+                "error": f"Missing field: {field}"
+            }), 400
+
+    analysis = Analysis(
+        algorithm=data["algorithm"],
+        n_min=data["n_min"],
+        n_max=data["n_max"],
+        step=data["step"],
+        input_sizes=json.dumps(data["input_sizes"]),
+        times=json.dumps(data["times"]),
+        image_path=data["image_path"]
+    )
+
+    db.session.add(analysis)
+    db.session.commit()
+
+    return jsonify({
+        "message": "Analysis saved successfully",
+        "analysis_id": analysis.id
+    }), 201
 
 
 # Start Flask server
